@@ -1,0 +1,121 @@
+name: "Disney+ Password Reset Exploit"
+
+# cancel existing runs of the same workflow on the same ref
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+on:
+  discovery:
+    - 'password_reset_endpoint_vulnerability'
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Description
+      run: |
+        This exploit allows an attacker to intercept the password reset email during the "Forgot Password" process by modifying the output data strings. 
+        The raw email data, including reset tokens or sensitive details, is exposed in the API response and can be manipulated to gain unauthorized access to user accounts. 
+        By processing the raw email data manually, the attacker can reset the password and change the account's associated email.
+
+    - name: Severity
+      run: |
+        Severity: High
+        Status: Open
+
+    - name: Steps to Reproduce
+      run: |
+        1. Navigate to the Disney+ login page at https://www.disneyplus.com.
+        2. Input the victim's email address (e.g., victim@example.com) and click "Forgot Password."
+        3. Use a proxy tool like Burp Suite or similar to intercept the outgoing POST request to the password reset endpoint.
+        4. Modify the email parameter in the request payload or manipulate the API response directly.
+        5. Extract the raw email data or token from the response.
+        6. Use the extracted token to manually reset the password or re-associate the account with an attacker-controlled email (e.g., attacker@example.com).
+
+    - name: Expected vs Actual Behavior
+      run: |
+        Expected Behavior:
+        Password reset emails should only be sent to the registered email address and no sensitive data (e.g., tokens or email details) should be exposed in any API response or request payload.
+
+        Actual Behavior:
+        The API response exposes the raw email data or password reset token, allowing attackers to intercept and manipulate the password reset workflow. This enables unauthorized access to user accounts.
+
+    - name: Technical Details
+      run: |
+        Vulnerable Endpoint: POST /api/reset-password
+        Example Vulnerable Response:
+        {
+          "status": "success",
+          "email": "victim@example.com",
+          "reset_token": "abc-def-123-456"
+        }
+        An attacker can intercept this response using tools like Burp Suite, extract the token, and finalize the password reset manually.
+
+    - name: Email Delivery Path Analysis
+      run: |
+        The vulnerability occurs at the Disney+ API level before the email is passed to the SMTP server.
+        Exposing the reset token and email details in the API response allows attackers to bypass the entire email delivery flow by intercepting the data early in the process.
+
+        Simplified representation of email delivery:
+        [Disney+ API]
+              |
+              |---> [Email Preparation Service]
+                       |
+                       |---> [SMTP Server (e.g., AWS SES, SendGrid, etc.)]
+                                |
+                                |---> [Internet Mail Transport Layer]
+                                         |
+                                         |---> [Recipient's Mail Server]
+                                                  |
+                                                  |---> [Recipient's Inbox]
+
+    - name: Impact
+      run: |
+        Attackers can take control of user accounts by:
+        - Changing the associated email to one they control.
+        - Gaining unauthorized access to the victim's account.
+        - Potentially exposing billing/payment details and sensitive personal information.
+
+    - name: Recommendations
+      run: |
+        - Remove sensitive data (email address and reset tokens) from API responses.
+        - Use secure session-based tokens instead of exposing the reset token in the API response.
+        - Encrypt sensitive data during transmission using industry-standard protocols (e.g., TLS 1.3).
+        - Implement rate-limiting and anomaly detection for password reset requests to prevent abuse.
+
+    - name: Proof of Concept
+      run: |
+        Tool used: Burp Suite
+        Vulnerable Endpoint: POST /api/reset-password
+        Example Vulnerable Payload:
+        {
+          "email": "victim@example.com",
+          "reset_token": "abcdef123456"
+        }
+        Steps:
+        1. Intercept the API response.
+        2. Extract the reset token from the response payload.
+        3. Use the token manually to reset the password and associate the account with an attacker-controlled email (e.g., attacker@example.com).
+
+    - name: References
+      run: |
+        - Disney Security Bug Bounty Program: https://www.disney.com/security
+        - OWASP Secure Password Reset Guidelines: https://owasp.org/www-project-secure-coding-practices/
+
+    - name: Contact Information
+      run: |
+        Reporter (via GitHub): adamfos
+
+    - name: Workflow
+      run: |
+        Triage:
+        - Verify the vulnerability by reproducing the exploit.
+        - Validate that sensitive data is exposed in the API response.
+        - Assess the risk based on the number of users potentially affected.
+
+        Mitigation:
+        - Encrypt sensitive data and ensure it is not exposed in API responses.
+        - Enforce tokenized password reset workflows that validate tokens against server-side sessions.
+        - Implement security headers like Content-Security-Policy and X-Content-Type-Options to prevent potential client-side vulnerabilities.
+        - Conduct security audits on the password reset API and related workflows.
